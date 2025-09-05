@@ -18,6 +18,6 @@ workflows:
     artifacts:
       - dist/*.apk
     publishing:
-      email:
-        recipients:
-          - $CM_EMAIL
+  email:
+    recipients:
+      - "westonaaron675@gmail.com"
