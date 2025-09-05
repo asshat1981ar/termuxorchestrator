@@ -1,0 +1,46 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Expo / React Native
+.expo/
+.expo-shared/
+web-build/
+dist/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Build outputs
+android/
+ios/
+build/
+*.apk
+*.aab
+
+# IDE / Editors
+.vscode/
+.idea/
+*.swp
+
+# Environment / Secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.keystore
+
+# EAS
+.eas/
+eas.json.local
+
+# Misc
+*.pid
+*.seed
+*.pid.lock
