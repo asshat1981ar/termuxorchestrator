@@ -1,5 +1,11 @@
 {
   "expo": {
+    "name": "Termux Orchestrator",
+    "slug": "home",
+    "version": "1.0.0",
+    "android": {
+      "package": "com.asshat1981ar.termuxorchestrator"
+    },
     "extra": {
       "eas": {
         "projectId": "7ae11833-d336-4106-a208-a5009c56cfd5"
