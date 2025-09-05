@@ -108,22 +108,18 @@ class OrchestatorAgents {
       // Ensure output directory exists
       await fs.mkdir(outputDir, { recursive: true });
       
-      const result = await this.claude.scaffoldProject(appSpec, appSpec.framework, outputDir);
-      
-      // Write files to disk
-      if (result.files && Array.isArray(result.files)) {
-        for (const file of result.files) {
-          const filePath = path.join(outputDir, file.path);
-          await fs.mkdir(path.dirname(filePath), { recursive: true });
-          await fs.writeFile(filePath, file.content);
-        }
-      }
+      // Use the scaffolder to generate project structure
+      const scaffolderPath = path.join(__dirname, '../../../termux-orchestrator-scaffolders/scaffolders/index.js');
+      const { ProjectScaffolder } = require(scaffolderPath);
+      const scaffolder = new ProjectScaffolder({ logLevel: this.logLevel });
+      const result = await scaffolder.scaffoldProject(appSpec, outputDir);
       
       await this.log('info', `Project scaffolded successfully in ${outputDir}`);
       return {
-        projectPath: outputDir,
-        files: result.files || [],
-        commands: result.commands || []
+        projectPath: result.projectPath || outputDir,
+        generatedFiles: result.generatedFiles || [],
+        framework: result.framework,
+        name: result.name
       };
       
     } catch (error) {

@@ -1,0 +1,57 @@
+# Environment variables and secrets
+.env
+*.env
+!.env.example
+keystore.txt
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+google-services.json
+service-account.json
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Node modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Logs
+*.log
+logs/
+.orchestrator/logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary folders
+tmp/
+temp/
+.tmp/
+
+# Build artifacts
+dist/
+build/
+.expo/
+web-build/
+
+# Termux specific
+*.termux
+.termux/
+
+# AI Cache
+.ai-cache/
+*.cache

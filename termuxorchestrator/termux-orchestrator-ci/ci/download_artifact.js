@@ -1,25 +1,31 @@
 #!/usr/bin/env node
 /**
  * Artifact Download Script for Termux Orchestrator
- * Downloads build artifacts from CI providers
+ * Downloads build artifacts from GitHub Actions, Codemagic, or EAS
  */
 
-const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
-const http = require('http');
+const { execSync } = require('child_process');
 
 class ArtifactDownloader {
   constructor() {
-    this.logFile = path.join(process.env.HOME, '.orchestrator', 'logs', 'download.log');
+    this.logFile = path.join(process.env.HOME, '.orchestrator', 'logs', 'artifact-download.log');
+    this.downloadDir = path.join(process.env.HOME, 'Downloads', 'orchestrator');
     this.ensureLogDir();
+    this.ensureDownloadDir();
   }
 
   ensureLogDir() {
     const dir = path.dirname(this.logFile);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
+    }
+  }
+
+  ensureDownloadDir() {
+    if (!fs.existsSync(this.downloadDir)) {
+      fs.mkdirSync(this.downloadDir, { recursive: true });
     }
   }
 
@@ -31,211 +37,280 @@ class ArtifactDownloader {
     fs.appendFileSync(this.logFile, logEntry);
   }
 
-  async downloadFile(url, outputPath, headers = {}) {
-    return new Promise((resolve, reject) => {
-      const client = url.startsWith('https:') ? https : http;
-      
-      this.log(`Downloading ${url} to ${outputPath}`);
-      
-      const request = client.get(url, { headers }, (response) => {
-        if (response.statusCode === 302 || response.statusCode === 301) {
-          // Handle redirect
-          this.log(`Redirected to: ${response.headers.location}`);
-          return this.downloadFile(response.headers.location, outputPath, headers)
-            .then(resolve)
-            .catch(reject);
-        }
-        
-        if (response.statusCode !== 200) {
-          reject(new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`));
-          return;
-        }
-        
-        const fileStream = fs.createWriteStream(outputPath);
-        const totalSize = parseInt(response.headers['content-length'], 10);
-        let downloadedSize = 0;
-        
-        response.on('data', (chunk) => {
-          downloadedSize += chunk.length;
-          if (totalSize) {
-            const percent = Math.round((downloadedSize / totalSize) * 100);
-            process.stdout.write(`\rDownloading: ${percent}% (${downloadedSize}/${totalSize} bytes)`);
-          }
-        });
-        
-        response.pipe(fileStream);
-        
-        fileStream.on('finish', () => {
-          console.log('\nDownload completed');
-          fileStream.close();
-          resolve(outputPath);
-        });
-        
-        fileStream.on('error', reject);
-      });
-      
-      request.on('error', reject);
-      request.setTimeout(300000, () => { // 5 minute timeout
-        request.destroy();
-        reject(new Error('Download timeout'));
-      });
-    });
-  }
-
-  async downloadGitHubArtifact(repo, runId, outputDir) {
-    this.log(`Downloading GitHub Actions artifact for ${repo}:${runId}`);
+  /**
+   * Download artifact from GitHub Actions
+   */
+  async downloadFromGitHub(repo, runId, artifactName = null) {
+    this.log(`Downloading GitHub Actions artifact: ${repo}:${runId}`);
     
     try {
-      // Get artifact info
-      const artifactCmd = `gh api repos/${repo}/actions/runs/${runId}/artifacts --jq '.artifacts[0]'`;
-      const artifactInfo = JSON.parse(execSync(artifactCmd, { encoding: 'utf8' }));
+      // Check if GitHub CLI is available
+      execSync('gh --version', { stdio: 'ignore' });
       
-      if (!artifactInfo || !artifactInfo.archive_download_url) {
+      // List artifacts for the run
+      const listCmd = `gh api repos/${repo}/actions/runs/${runId}/artifacts --jq '.artifacts[]'`;
+      const artifactsJson = execSync(listCmd, { encoding: 'utf8' });
+      const artifacts = JSON.parse(`[${artifactsJson.trim().split('\n').join(',')}]`);
+      
+      if (artifacts.length === 0) {
         throw new Error('No artifacts found for this run');
       }
       
-      this.log(`Artifact: ${artifactInfo.name} (${artifactInfo.size_in_bytes} bytes)`);
-      
-      // Download artifact (requires authentication)
-      const downloadUrl = artifactInfo.archive_download_url;
-      const token = execSync('gh auth token', { encoding: 'utf8' }).trim();
-      
-      const outputPath = path.join(outputDir, `${artifactInfo.name}.zip`);
-      await this.downloadFile(downloadUrl, outputPath, {
-        'Authorization': `token ${token}`,
-        'User-Agent': 'termux-orchestrator'
-      });
-      
-      // Extract if it's a zip file
-      if (outputPath.endsWith('.zip')) {
-        const extractDir = path.join(outputDir, artifactInfo.name);
-        fs.mkdirSync(extractDir, { recursive: true });
-        
-        try {
-          execSync(`unzip -o "${outputPath}" -d "${extractDir}"`, { stdio: 'pipe' });
-          this.log(`Extracted to: ${extractDir}`);
-          
-          // Find APK files
-          const apkFiles = this.findFiles(extractDir, '.apk');
-          if (apkFiles.length > 0) {
-            this.log(`Found APK files: ${apkFiles.join(', ')}`);
-            return apkFiles[0]; // Return first APK
-          }
-        } catch (error) {
-          this.log(`Extraction failed: ${error.message}`);
-        }
+      // Find the artifact to download (prioritize APK artifacts)
+      let targetArtifact;
+      if (artifactName) {
+        targetArtifact = artifacts.find(a => a.name === artifactName);
+      } else {
+        // Auto-select APK or Android artifacts
+        targetArtifact = artifacts.find(a => 
+          a.name.toLowerCase().includes('apk') || 
+          a.name.toLowerCase().includes('android') ||
+          a.name.toLowerCase().includes('app')
+        ) || artifacts[0];
       }
       
-      return outputPath;
+      if (!targetArtifact) {
+        throw new Error(`Artifact not found: ${artifactName || 'auto-select'}`);
+      }
+      
+      this.log(`Found artifact: ${targetArtifact.name} (${targetArtifact.size_in_bytes} bytes)`);
+      
+      // Download artifact
+      const outputPath = path.join(this.downloadDir, `${targetArtifact.name}.zip`);
+      const downloadCmd = `gh api repos/${repo}/actions/artifacts/${targetArtifact.id}/zip > "${outputPath}"`;
+      
+      execSync(downloadCmd, { stdio: 'inherit' });
+      
+      // Extract if it's a zip file
+      const extractedPath = await this.extractArtifact(outputPath);
+      
+      this.log(`Artifact downloaded successfully: ${extractedPath}`);
+      return {
+        success: true,
+        artifactPath: extractedPath,
+        originalPath: outputPath,
+        artifact: targetArtifact
+      };
       
     } catch (error) {
-      throw new Error(`GitHub artifact download failed: ${error.message}`);
+      this.log(`GitHub artifact download failed: ${error.message}`);
+      throw error;
     }
   }
 
-  async downloadCodemagicArtifact(buildId, outputDir) {
-    this.log(`Downloading Codemagic artifact for build ${buildId}`);
+  /**
+   * Download artifact from Codemagic
+   */
+  async downloadFromCodemagic(buildId) {
+    this.log(`Downloading Codemagic artifact: ${buildId}`);
     
     try {
       const accessToken = process.env.CODEMAGIC_ACCESS_TOKEN;
       if (!accessToken) {
-        throw new Error('CODEMAGIC_ACCESS_TOKEN environment variable required');
+        throw new Error('CODEMAGIC_ACCESS_TOKEN not set');
       }
       
-      // Get build info
-      const curlCmd = `curl -s -H "x-auth-token: ${accessToken}" https://api.codemagic.io/builds/${buildId}`;
-      const response = execSync(curlCmd, { encoding: 'utf8' });
-      const buildInfo = JSON.parse(response);
+      // Get build details
+      const buildDetailsCmd = `curl -s -H "x-auth-token: ${accessToken}" "https://api.codemagic.io/builds/${buildId}"`;
+      const buildDetails = JSON.parse(execSync(buildDetailsCmd, { encoding: 'utf8' }));
       
-      if (!buildInfo.artefacts || buildInfo.artefacts.length === 0) {
-        throw new Error('No artifacts found for this build');
+      if (!buildDetails.build) {
+        throw new Error('Build not found or access denied');
       }
       
-      const artifact = buildInfo.artefacts[0];
-      this.log(`Artifact: ${artifact.name} (${artifact.size} bytes)`);
+      const build = buildDetails.build;
+      this.log(`Build status: ${build.status}`);
       
-      const outputPath = path.join(outputDir, artifact.name);
-      await this.downloadFile(artifact.url, outputPath);
+      if (build.status !== 'finished') {
+        throw new Error(`Build not finished. Status: ${build.status}`);
+      }
       
-      return outputPath;
+      // Find APK artifact
+      const artifacts = build.artefacts || [];
+      const apkArtifact = artifacts.find(a => 
+        a.name.endsWith('.apk') || 
+        a.type === 'apk' ||
+        a.name.toLowerCase().includes('apk')
+      );
+      
+      if (!apkArtifact) {
+        throw new Error('No APK artifact found in build');
+      }
+      
+      this.log(`Found APK: ${apkArtifact.name} (${apkArtifact.size || 'unknown size'})`);
+      
+      // Download APK
+      const outputPath = path.join(this.downloadDir, apkArtifact.name);
+      const downloadCmd = `curl -L -H "x-auth-token: ${accessToken}" "${apkArtifact.url}" -o "${outputPath}"`;
+      
+      execSync(downloadCmd, { stdio: 'inherit' });
+      
+      this.log(`APK downloaded successfully: ${outputPath}`);
+      return {
+        success: true,
+        artifactPath: outputPath,
+        artifact: apkArtifact,
+        build: build
+      };
       
     } catch (error) {
-      throw new Error(`Codemagic artifact download failed: ${error.message}`);
+      this.log(`Codemagic artifact download failed: ${error.message}`);
+      throw error;
     }
   }
 
-  async downloadEASArtifact(buildId, outputDir) {
-    this.log(`Downloading EAS artifact for build ${buildId}`);
+  /**
+   * Download artifact from EAS Build
+   */
+  async downloadFromEAS(buildId) {
+    this.log(`Downloading EAS artifact: ${buildId}`);
     
     try {
-      // Get build info
-      const cmd = `eas build:view ${buildId} --json`;
-      const output = execSync(cmd, { encoding: 'utf8' });
-      const buildInfo = JSON.parse(output);
+      // Check if EAS CLI is available
+      execSync('eas --version', { stdio: 'ignore' });
       
-      if (!buildInfo.artifacts || !buildInfo.artifacts.buildUrl) {
-        throw new Error('No build URL found for this build');
+      // Get build details
+      const buildCmd = `eas build:view ${buildId} --json`;
+      const buildDetails = JSON.parse(execSync(buildCmd, { encoding: 'utf8' }));
+      
+      if (!buildDetails) {
+        throw new Error('Build not found');
       }
       
-      const buildUrl = buildInfo.artifacts.buildUrl;
-      const fileName = `eas-build-${buildId}.apk`;
-      const outputPath = path.join(outputDir, fileName);
+      this.log(`Build status: ${buildDetails.status}`);
       
-      this.log(`Build URL: ${buildUrl}`);
-      await this.downloadFile(buildUrl, outputPath);
+      if (buildDetails.status !== 'finished') {
+        throw new Error(`Build not finished. Status: ${buildDetails.status}`);
+      }
       
-      return outputPath;
+      const artifactUrl = buildDetails.artifacts?.buildUrl;
+      if (!artifactUrl) {
+        throw new Error('No build artifact URL found');
+      }
+      
+      this.log(`Found artifact URL: ${artifactUrl}`);
+      
+      // Determine file extension from URL or build type
+      const extension = buildDetails.platform === 'ios' ? '.ipa' : '.apk';
+      const filename = `${buildDetails.appId}-${buildDetails.buildVersion}${extension}`;
+      const outputPath = path.join(this.downloadDir, filename);
+      
+      // Download artifact
+      const downloadCmd = `curl -L "${artifactUrl}" -o "${outputPath}"`;
+      execSync(downloadCmd, { stdio: 'inherit' });
+      
+      this.log(`EAS artifact downloaded successfully: ${outputPath}`);
+      return {
+        success: true,
+        artifactPath: outputPath,
+        artifact: {
+          url: artifactUrl,
+          name: filename,
+          platform: buildDetails.platform
+        },
+        build: buildDetails
+      };
       
     } catch (error) {
-      throw new Error(`EAS artifact download failed: ${error.message}`);
+      this.log(`EAS artifact download failed: ${error.message}`);
+      throw error;
     }
   }
 
-  async downloadFromUrl(url, outputDir, fileName = null) {
-    this.log(`Downloading from URL: ${url}`);
+  /**
+   * Extract compressed artifacts (zip files)
+   */
+  async extractArtifact(zipPath) {
+    if (!zipPath.endsWith('.zip')) {
+      return zipPath; // Not a zip file, return as-is
+    }
     
     try {
-      if (!fileName) {
-        fileName = path.basename(url) || `download-${Date.now()}`;
+      const extractDir = path.join(path.dirname(zipPath), path.basename(zipPath, '.zip'));
+      
+      // Create extraction directory
+      if (!fs.existsSync(extractDir)) {
+        fs.mkdirSync(extractDir, { recursive: true });
       }
       
-      const outputPath = path.join(outputDir, fileName);
-      await this.downloadFile(url, outputPath);
+      // Extract zip file
+      const extractCmd = `cd "${extractDir}" && unzip -o "${zipPath}"`;
+      execSync(extractCmd, { stdio: 'inherit' });
       
-      return outputPath;
+      // Find the main artifact file (APK, IPA, etc.)
+      const files = fs.readdirSync(extractDir);
+      const artifactFile = files.find(f => 
+        f.endsWith('.apk') || 
+        f.endsWith('.ipa') || 
+        f.endsWith('.aab')
+      );
+      
+      if (artifactFile) {
+        const artifactPath = path.join(extractDir, artifactFile);
+        this.log(`Extracted artifact: ${artifactPath}`);
+        return artifactPath;
+      } else {
+        this.log(`No mobile artifact found in extracted files: ${files.join(', ')}`);
+        return extractDir; // Return directory if no specific artifact found
+      }
       
     } catch (error) {
-      throw new Error(`URL download failed: ${error.message}`);
+      this.log(`Failed to extract ${zipPath}: ${error.message}`);
+      return zipPath; // Return original if extraction fails
     }
   }
 
-  findFiles(directory, extension) {
-    const files = [];
+  /**
+   * Validate downloaded artifact
+   */
+  validateArtifact(filePath) {
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`Artifact file not found: ${filePath}`);
+    }
     
-    const searchDir = (dir) => {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
+    const stats = fs.statSync(filePath);
+    if (stats.size === 0) {
+      throw new Error(`Artifact file is empty: ${filePath}`);
+    }
+    
+    const ext = path.extname(filePath).toLowerCase();
+    if (!['.apk', '.ipa', '.aab'].includes(ext)) {
+      this.log(`Warning: Unexpected file type: ${ext}`);
+    }
+    
+    this.log(`Artifact validation passed: ${filePath} (${stats.size} bytes)`);
+    return true;
+  }
+
+  /**
+   * Clean up old downloads
+   */
+  cleanupOldDownloads(maxAge = 7 * 24 * 60 * 60 * 1000) { // 7 days default
+    this.log('Cleaning up old downloads...');
+    
+    try {
+      const files = fs.readdirSync(this.downloadDir);
+      const now = Date.now();
+      let cleaned = 0;
       
-      for (const entry of entries) {
-        const fullPath = path.join(dir, entry.name);
+      for (const file of files) {
+        const filePath = path.join(this.downloadDir, file);
+        const stats = fs.statSync(filePath);
         
-        if (entry.isDirectory()) {
-          searchDir(fullPath);
-        } else if (entry.name.endsWith(extension)) {
-          files.push(fullPath);
+        if (now - stats.mtime.getTime() > maxAge) {
+          if (stats.isDirectory()) {
+            fs.rmSync(filePath, { recursive: true, force: true });
+          } else {
+            fs.unlinkSync(filePath);
+          }
+          cleaned++;
+          this.log(`Removed old file: ${file}`);
         }
       }
-    };
-    
-    searchDir(directory);
-    return files;
-  }
-
-  setFilePermissions(filePath, mode = 0o644) {
-    try {
-      fs.chmodSync(filePath, mode);
-      this.log(`Set permissions ${mode.toString(8)} on ${filePath}`);
+      
+      this.log(`Cleanup complete: ${cleaned} files removed`);
     } catch (error) {
-      this.log(`Failed to set permissions: ${error.message}`);
+      this.log(`Cleanup failed: ${error.message}`);
     }
   }
 }
@@ -244,112 +319,96 @@ class ArtifactDownloader {
 async function main() {
   const args = process.argv.slice(2);
   
-  if (args.includes('--help') || args.includes('-h')) {
-    console.log(`
-Usage: node download_artifact.js [options]
+  if (args.length < 2) {
+    console.log(`Usage: node download_artifact.js <provider> <build-id> [options]
+
+Providers:
+  github <repo> <run-id> [artifact-name]
+  codemagic <build-id>
+  eas <build-id>
 
 Options:
-  --provider <provider>  CI provider: github, codemagic, eas, url
-  --repo <repo>         Repository for GitHub (format: owner/repo)
-  --run-id <id>         Run ID for GitHub Actions
-  --build-id <id>       Build ID for Codemagic or EAS
-  --url <url>           Direct download URL
-  --out <dir>           Output directory (default: ./artifacts)
-  --filename <name>     Custom filename for URL downloads
+  --output <dir>     Download directory (default: ~/Downloads/orchestrator)
+  --cleanup          Clean old downloads before starting
 
 Examples:
-  node download_artifact.js --provider github --repo user/app --run-id 123456 --out ./downloads
-  node download_artifact.js --provider codemagic --build-id abc123 --out ./artifacts
-  node download_artifact.js --provider eas --build-id def456
-  node download_artifact.js --provider url --url https://example.com/app.apk --filename app.apk
-
-Environment Variables:
-  CODEMAGIC_ACCESS_TOKEN - Required for Codemagic downloads
-`);
-    process.exit(0);
+  node download_artifact.js github user/repo 123456
+  node download_artifact.js github user/repo 123456 android-apk
+  node download_artifact.js codemagic abc123def456
+  node download_artifact.js eas build_12345678
+  node download_artifact.js --cleanup github user/repo 123456`);
+    process.exit(1);
   }
-
-  const provider = args[args.indexOf('--provider') + 1] || 'github';
-  const repo = args.includes('--repo') ? args[args.indexOf('--repo') + 1] : null;
-  const runId = args.includes('--run-id') ? args[args.indexOf('--run-id') + 1] : null;
-  const buildId = args.includes('--build-id') ? args[args.indexOf('--build-id') + 1] : null;
-  const url = args.includes('--url') ? args[args.indexOf('--url') + 1] : null;
-  const outputDir = args.includes('--out') ? args[args.indexOf('--out') + 1] : './artifacts';
-  const fileName = args.includes('--filename') ? args[args.indexOf('--filename') + 1] : null;
-
-  // Ensure output directory exists
-  fs.mkdirSync(outputDir, { recursive: true });
-
+  
+  const provider = args[0];
   const downloader = new ArtifactDownloader();
-
+  
   try {
-    let downloadedFile;
+    // Handle cleanup option
+    if (args.includes('--cleanup')) {
+      downloader.cleanupOldDownloads();
+    }
+    
+    // Handle output directory option
+    const outputIndex = args.indexOf('--output');
+    if (outputIndex !== -1 && args[outputIndex + 1]) {
+      downloader.downloadDir = args[outputIndex + 1];
+      downloader.ensureDownloadDir();
+    }
+    
+    let result;
     
     switch (provider) {
       case 'github':
-        if (!repo || !runId) {
-          throw new Error('--repo and --run-id required for GitHub downloads');
+        if (args.length < 3) {
+          throw new Error('GitHub provider requires: <repo> <run-id> [artifact-name]');
         }
-        downloadedFile = await downloader.downloadGitHubArtifact(repo, runId, outputDir);
+        const [, repo, runId, artifactName] = args;
+        result = await downloader.downloadFromGitHub(repo, runId, artifactName);
         break;
         
       case 'codemagic':
-        if (!buildId) {
-          throw new Error('--build-id required for Codemagic downloads');
+        if (args.length < 2) {
+          throw new Error('Codemagic provider requires: <build-id>');
         }
-        downloadedFile = await downloader.downloadCodemagicArtifact(buildId, outputDir);
+        const [, buildId] = args;
+        result = await downloader.downloadFromCodemagic(buildId);
         break;
         
       case 'eas':
-        if (!buildId) {
-          throw new Error('--build-id required for EAS downloads');
+        if (args.length < 2) {
+          throw new Error('EAS provider requires: <build-id>');
         }
-        downloadedFile = await downloader.downloadEASArtifact(buildId, outputDir);
-        break;
-        
-      case 'url':
-        if (!url) {
-          throw new Error('--url required for URL downloads');
-        }
-        downloadedFile = await downloader.downloadFromUrl(url, outputDir, fileName);
+        const [, easBuildId] = args;
+        result = await downloader.downloadFromEAS(easBuildId);
         break;
         
       default:
-        throw new Error('Invalid provider. Use: github, codemagic, eas, or url');
+        throw new Error(`Unknown provider: ${provider}. Use: github, codemagic, or eas`);
     }
     
-    // Set proper file permissions
-    downloader.setFilePermissions(downloadedFile);
+    // Validate downloaded artifact
+    downloader.validateArtifact(result.artifactPath);
     
-    console.log('\nDownload completed successfully!');
-    console.log(`File: ${downloadedFile}`);
+    console.log(`\n✅ Download completed successfully!`);
+    console.log(`📁 Artifact: ${result.artifactPath}`);
+    console.log(`📊 Provider: ${provider}`);
     
-    // Output result as JSON for orchestrator consumption
-    const result = {
-      success: true,
-      file: downloadedFile,
-      provider: provider,
-      size: fs.statSync(downloadedFile).size
-    };
-    
-    console.log(JSON.stringify(result));
+    // Output JSON for programmatic use
+    if (args.includes('--json')) {
+      console.log(JSON.stringify(result, null, 2));
+    }
     
   } catch (error) {
-    console.error('Download failed:', error.message);
-    
-    const result = {
-      success: false,
-      error: error.message,
-      provider: provider
-    };
-    
-    console.log(JSON.stringify(result));
+    console.error(`❌ Download failed: ${error.message}`);
     process.exit(1);
   }
 }
 
+// Export for use as module
+module.exports = { ArtifactDownloader };
+
+// Run CLI if called directly
 if (require.main === module) {
   main().catch(console.error);
 }
-
-module.exports = { ArtifactDownloader };

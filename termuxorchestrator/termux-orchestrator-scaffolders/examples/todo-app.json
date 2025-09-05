@@ -1,0 +1,71 @@
+{
+  "name": "TodoMaster",
+  "version": "1.0.0",
+  "description": "A simple but powerful todo application with offline storage",
+  "platform": "android",
+  "framework": "react-native",
+  "packageName": "com.orchestrator.todomaster",
+  "pages": [
+    {
+      "name": "Home",
+      "type": "screen",
+      "components": ["header", "todo-list", "add-button"]
+    },
+    {
+      "name": "AddTodo",
+      "type": "modal",
+      "components": ["form", "save-button", "cancel-button"]
+    },
+    {
+      "name": "Settings",
+      "type": "screen", 
+      "components": ["theme-toggle", "export-data", "about"]
+    }
+  ],
+  "features": [
+    {
+      "name": "todo-management",
+      "category": "data",
+      "description": "Create, edit, delete, and mark todos as complete",
+      "priority": 1
+    },
+    {
+      "name": "offline-storage",
+      "category": "data",
+      "description": "Store todos locally with SQLite for offline access",
+      "priority": 1
+    },
+    {
+      "name": "dark-mode",
+      "category": "ui",
+      "description": "Toggle between light and dark themes",
+      "priority": 2
+    },
+    {
+      "name": "data-export",
+      "category": "utility",
+      "description": "Export todos to JSON or CSV format",
+      "priority": 3
+    }
+  ],
+  "data": [
+    {
+      "name": "todos",
+      "type": "sqlite",
+      "schema": {
+        "id": "integer primary key",
+        "title": "text not null",
+        "description": "text",
+        "completed": "boolean default false",
+        "created_at": "datetime default current_timestamp",
+        "updated_at": "datetime default current_timestamp"
+      }
+    }
+  ],
+  "apis": [],
+  "theme": {
+    "primaryColor": "#007AFF",
+    "secondaryColor": "#5856D6",
+    "backgroundColor": "#F2F2F7"
+  }
+}
