@@ -44,3 +44,4 @@ eas.json.local
 *.pid
 *.seed
 *.pid.lock
+claude.json.backup
