@@ -29,7 +29,7 @@ class CITrigger {
     fs.appendFileSync(this.logFile, logEntry);
   }
 
-  async triggerGitHubActions(repo, branch = 'main') {
+  async triggerGitHubActions(repo, branch = 'master') {
     this.log(`Triggering GitHub Actions for ${repo}:${branch}`);
     
     try {
@@ -54,7 +54,7 @@ class CITrigger {
     }
   }
 
-  async triggerCodemagic(repo, branch = 'main') {
+  async triggerCodemagic(repo, branch = 'master') {
     this.log(`Triggering Codemagic for ${repo}:${branch}`);
     
     try {
@@ -266,7 +266,7 @@ Usage: node trigger_ci.js --ci <provider> --repo <repo> [options]
 Options:
   --ci <provider>        CI provider: github, codemagic, eas
   --repo <repo>         Repository (format: owner/repo)
-  --branch <branch>     Branch to build (default: main)
+  --branch <branch>     Branch to build (default: master)
   --platform <platform> Platform for EAS (default: android)
   --poll               Wait for build completion and return artifact URL
   --timeout <minutes>  Max wait time in minutes (default: 30)
@@ -286,7 +286,7 @@ Environment Variables:
 
   const ci = args[args.indexOf('--ci') + 1];
   const repo = args[args.indexOf('--repo') + 1];
-  const branch = args.includes('--branch') ? args[args.indexOf('--branch') + 1] : 'main';
+  const branch = args.includes('--branch') ? args[args.indexOf('--branch') + 1] : 'master';
   const platform = args.includes('--platform') ? args[args.indexOf('--platform') + 1] : 'android';
   const poll = args.includes('--poll');
   const timeout = args.includes('--timeout') ? parseInt(args[args.indexOf('--timeout') + 1]) : 30;
