@@ -5,11 +5,21 @@ workflows:
       node: 18
       java: 17
       groups:
-        - expo_credentials
+        - expo_credentials  # contains EXPO_TOKEN, KEYSTORE, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
     scripts:
-      - name: Decode keystore
+      - name: Decode keystore (local + CI safe)
         script: |
-          echo $KEYSTORE | base64 --decode > ~/termuxorchestrator/dollabills.jks
+          # Determine target path
+          TARGET_DIR="${CM_BUILD_DIR:-$(pwd)}/android/app"
+          mkdir -p "$TARGET_DIR"
+
+          # Only decode if KEYSTORE is set
+          if [ -n "$KEYSTORE" ]; then
+            echo "Decoding keystore to $TARGET_DIR/dollabills.jks"
+            echo "$KEYSTORE" | base64 --decode > "$TARGET_DIR/dollabills.jks"
+          else
+            echo "No KEYSTORE variable found — skipping decode."
+          fi
       - name: Install dependencies
         script: npm install
       - name: Run tests
