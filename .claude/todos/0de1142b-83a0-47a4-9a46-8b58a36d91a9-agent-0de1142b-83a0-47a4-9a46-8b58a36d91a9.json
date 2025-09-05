@@ -20,8 +20,13 @@
     "activeForm": "Implementing Delivery Layer"
   },
   {
+    "content": "Create codemagic.yaml for current project",
+    "status": "completed",
+    "activeForm": "Creating codemagic.yaml for current project"
+  },
+  {
     "content": "Implement App Scaffolder",
-    "status": "in_progress",
+    "status": "pending",
     "activeForm": "Implementing App Scaffolder"
   },
   {

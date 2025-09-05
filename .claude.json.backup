@@ -8,8 +8,7 @@
     "theme-command": 2,
     "status-line": 2,
     "enter-to-steer-in-relatime": 2,
-    "todo-list": 2,
-    "# for memory": 2
+    "todo-list": 2
   },
   "promptQueueUseCount": 4,
   "cachedStatsigGates": {
