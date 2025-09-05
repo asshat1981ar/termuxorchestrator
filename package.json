@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@anthropic-ai/claude-code": "^1.0.102",
+    "@steipete/claude-code-mcp": "^1.10.12",
+    "expo-dev": "^0.0.1",
+    "zcf": "^2.12.7"
+  }
+}

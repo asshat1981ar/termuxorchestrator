@@ -1,0 +1,42 @@
+[
+  {
+    "content": "Implement Foundation - Termux bootstrap & environment",
+    "status": "completed",
+    "activeForm": "Implementing Foundation - Termux bootstrap & environment"
+  },
+  {
+    "content": "Implement Agentic Core - CLI wrappers",
+    "status": "completed",
+    "activeForm": "Implementing Agentic Core - CLI wrappers"
+  },
+  {
+    "content": "Implement CI/CD configs & API triggers",
+    "status": "completed",
+    "activeForm": "Implementing CI/CD configs & API triggers"
+  },
+  {
+    "content": "Implement Delivery Layer",
+    "status": "completed",
+    "activeForm": "Implementing Delivery Layer"
+  },
+  {
+    "content": "Implement App Scaffolder",
+    "status": "in_progress",
+    "activeForm": "Implementing App Scaffolder"
+  },
+  {
+    "content": "Implement Feature Implementation Loop",
+    "status": "pending",
+    "activeForm": "Implementing Feature Implementation Loop"
+  },
+  {
+    "content": "Implement Tests, Lint & Auto-fix",
+    "status": "pending",
+    "activeForm": "Implementing Tests, Lint & Auto-fix"
+  },
+  {
+    "content": "Implement Orchestrator CLI",
+    "status": "pending",
+    "activeForm": "Implementing Orchestrator CLI"
+  }
+]

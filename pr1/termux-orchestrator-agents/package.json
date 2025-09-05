@@ -1,0 +1,29 @@
+{
+  "name": "termux-orchestrator-agents",
+  "version": "1.0.0",
+  "description": "CLI wrappers for AI agents used by Termux Orchestrator",
+  "main": "src/agents/index.js",
+  "scripts": {
+    "test": "node tests/agents.test.js",
+    "lint": "echo 'Linting not configured yet'",
+    "start": "node src/agents/index.js"
+  },
+  "dependencies": {
+    "execa": "^8.0.1",
+    "ajv": "^8.12.0",
+    "ajv-formats": "^2.1.1"
+  },
+  "devDependencies": {},
+  "keywords": [
+    "termux",
+    "orchestrator",
+    "ai",
+    "agents",
+    "cli"
+  ],
+  "author": "Termux Orchestrator",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

@@ -1,0 +1,149 @@
+name: Flutter Build (Android)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: "3.24.3"
+  JAVA_VERSION: "17"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 🏗 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: 🐦 Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: 📋 Flutter doctor
+        run: flutter doctor -v
+
+      - name: 📦 Get dependencies
+        run: flutter pub get
+
+      - name: 🔍 Analyze code
+        run: flutter analyze
+
+      - name: 🧪 Run tests
+        run: flutter test --coverage
+
+      - name: 📱 Build APK (Debug)
+        if: github.event_name == 'pull_request'
+        run: flutter build apk --debug
+
+      - name: 📱 Build APK (Release)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: flutter build apk --release --split-per-abi
+
+      - name: 📱 Build App Bundle (Release)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: flutter build appbundle --release
+
+      - name: 📤 Upload APK artifacts (Debug)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-apk-debug-${{ github.sha }}
+          path: |
+            build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 7
+
+      - name: 📤 Upload APK artifacts (Release)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-apk-release-${{ github.sha }}
+          path: |
+            build/app/outputs/flutter-apk/app-*-release.apk
+            build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
+
+      - name: 📤 Upload App Bundle
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-aab-${{ github.sha }}
+          path: |
+            build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
+
+      - name: 📤 Upload test coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-coverage-${{ github.sha }}
+          path: |
+            coverage/lcov.info
+          retention-days: 7
+
+      - name: 📋 Build summary
+        if: always()
+        run: |
+          echo "## Flutter Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Platform: Android" >> $GITHUB_STEP_SUMMARY
+          echo "- Framework: Flutter" >> $GITHUB_STEP_SUMMARY
+          echo "- Flutter Version: ${{ env.FLUTTER_VERSION }}" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "- Build Type: Debug" >> $GITHUB_STEP_SUMMARY
+            echo "- Artifact: flutter-apk-debug-${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Build Type: Release" >> $GITHUB_STEP_SUMMARY
+            echo "- Artifacts:" >> $GITHUB_STEP_SUMMARY
+            echo "  - APK: flutter-apk-release-${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+            echo "  - AAB: flutter-aab-${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ -f "build/app/outputs/flutter-apk/app-release.apk" ]; then
+            APK_SIZE=$(du -h build/app/outputs/flutter-apk/app-release.apk | cut -f1)
+            echo "- APK Size: $APK_SIZE" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Build succeeded" >> $GITHUB_STEP_SUMMARY
+          elif [ -f "build/app/outputs/flutter-apk/app-debug.apk" ]; then
+            APK_SIZE=$(du -h build/app/outputs/flutter-apk/app-debug.apk | cut -f1)
+            echo "- APK Size: $APK_SIZE" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Debug build succeeded" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Build failed - no APK generated" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # Optional: Deploy to Firebase App Distribution
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: 🏗 Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: 📥 Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: flutter-apk-release-${{ github.sha }}
+          path: ./artifacts
+
+      - name: 🚀 Deploy to Firebase App Distribution
+        # Uncomment and configure if you want Firebase App Distribution
+        # uses: wzieba/Firebase-Distribution-Github-Action@v1
+        # with:
+        #   appId: ${{ secrets.FIREBASE_APP_ID }}
+        #   serviceCredentialsFileContent: ${{ secrets.CREDENTIAL_FILE_CONTENT }}
+        #   groups: testers
+        #   file: ./artifacts/app-release.apk
+        run: echo "Firebase App Distribution deployment would go here"

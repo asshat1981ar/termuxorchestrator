@@ -1,0 +1,96 @@
+name: Expo EAS Build (Android)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: 18
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 🏗 Setup repo
+        uses: actions/checkout@v4
+
+      - name: 🏗 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🧪 Run tests
+        run: npm test --if-present
+
+      - name: 🔍 Run linter
+        run: npm run lint --if-present
+
+      - name: 📱 Setup EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: 🏗 Create EAS build
+        run: |
+          # Build for Android
+          eas build --platform android --profile production --non-interactive --wait
+          
+          # Download the built APK
+          mkdir -p dist
+          eas build:list --platform android --status finished --limit 1 --json > build_info.json
+          
+          # Extract download URL and download APK
+          BUILD_URL=$(cat build_info.json | jq -r '.[0].artifacts.buildUrl')
+          if [ "$BUILD_URL" != "null" ]; then
+            curl -L "$BUILD_URL" -o dist/app-release.apk
+          fi
+
+      - name: 📤 Upload build artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: expo-apk-${{ github.sha }}
+          path: |
+            dist/*.apk
+          retention-days: 30
+
+      - name: 📋 Build summary
+        if: always()
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Platform: Android" >> $GITHUB_STEP_SUMMARY
+          echo "- Framework: Expo/React Native" >> $GITHUB_STEP_SUMMARY
+          echo "- Build Profile: production" >> $GITHUB_STEP_SUMMARY
+          echo "- Artifact: expo-apk-${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "dist/app-release.apk" ]; then
+            APK_SIZE=$(du -h dist/app-release.apk | cut -f1)
+            echo "- APK Size: $APK_SIZE" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Build succeeded" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Build failed - no APK generated" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: build
+    if: always()
+    steps:
+      - name: 📢 Notify build status
+        run: |
+          if [ "${{ needs.build.result }}" == "success" ]; then
+            echo "✅ Expo build completed successfully"
+            echo "APK artifact: expo-apk-${{ github.sha }}"
+          else
+            echo "❌ Expo build failed"
+            echo "Check the build logs for details"
+          fi
