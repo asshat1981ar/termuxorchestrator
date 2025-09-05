@@ -5,16 +5,17 @@ workflows:
       node: 18
       java: 17
       groups:
-        - expo_credentials       # contains EXPO_TOKEN
+        - expo_credentials
     scripts:
+      - name: Decode keystore
+        script: |
+          echo $KEYSTORE | base64 --decode > ~/termuxorchestrator/dollabills.jks
       - name: Install dependencies
         script: npm install
-      - name: Authenticate with Expo
-        script: npx eas-cli login --token $EXPO_TOKEN
       - name: Run tests
         script: npm test || echo "No tests"
       - name: Build Android APK with EAS
-        script: npx eas-cli build --platform android --non-interactive --profile production
+        script: npx eas-cli build --platform android --profile production --non-interactive
     artifacts:
       - dist/*.apk
-
+      - dist/*.aab
